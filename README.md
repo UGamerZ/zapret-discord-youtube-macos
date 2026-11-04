@@ -1,112 +1,186 @@
-# Zapret macOS 0.2.2 — Flowseal packet engine
+# Zapret macOS 0.2.2
 
-This replaces the earlier SOCKS adaptation. It uses **all 22 original Flowseal BAT configurations and bol-van's original C packet/desynchronization engine**, with a new macOS PFLOG/BPF backend. The SwiftUI interface follows trankesh's dark compact desktop GUI.
+Неофициальная версия zapret для macOS с интерфейсом на SwiftUI, оформленным по образцу [trankesh/zapret-youtube-discord-gui](https://github.com/trankesh/zapret-youtube-discord-gui).
 
-The important difference: it can construct and emit actual TCP/UDP packets, including fake payloads, negative sequence overlaps, bad sequence/acknowledgement numbers, TCP timestamps, repeat counts, and IPv4 IP IDs. It does not substitute socket-level splitting for these operations.
+Приложение использует **все 22 оригинальные конфигурации Flowseal и оригинальный пакетный движок bol-van на C**. Для macOS разработан транспорт на PFLOG/BPF: он перехватывает исходящие IP-пакеты и отправляет сформированные движком Ethernet-кадры через сетевой интерфейс.
 
-**Experimental transport:** builds and packet replay tests pass. Live administrator-authorized PF/BPF interception, end-to-end recovery, Discord voice and ISP bypass have NOT been verified on this machine. Do not treat replay success as a working-network certification.
+Поддерживаются операции оригинального движка: поддельные TCP/UDP-пакеты, перекрытия последовательностей, неверные номера sequence/acknowledgement, TCP timestamps, повторы и изменение IPv4 IP ID. Прежняя адаптация через SOCKS заменена пакетным транспортом.
 
-## Capture and diagnostic fix in 0.2.2
+> **Экспериментальная версия.** Сборка и автономные тесты обработки пакетов проходят. Работа привилегированного перехвата PF/BPF, восстановление после сбоев в реальной сети, голос Discord и обход блокировок провайдера пока не подтверждены полноценными сетевыми испытаниями. Успешная обработка тестового PCAP не доказывает работоспособность обхода.
 
-The old incoming capture filter used the `inbound` BPF qualifier, which system libpcap rejects for Ethernet: `inbound/outbound not supported on Ethernet`. That failure returned without preserving its cause. Direction is now selected with `pcap_setdirection(PCAP_D_IN)`, while the IPv4/IPv6 SYN/ACK filter uses portable packet fields.
+## Требования
 
-Every transport setup step now records a stage, concise reason, actual OS/libpcap/tool detail and error code in status.json and packet.log. The alert displays that structured error and omits routine host/IP list loading. It provides Copy error and Open log actions. Offline regression tests reproduce the old compiler failure, accept the actual replacement filter, check IPv4/IPv6 matching, verify error serialization, and check compact alert text. Live capture direction selection still requires a real administrator-authorized run.
+- macOS 13 или новее, Apple Silicon либо Intel.
+- Apple Command Line Tools, Swift 5.9+, clang и Python 3 для сборки. Используются системные libpcap и zlib; скачивать сторонние зависимости при сборке не нужно.
+- Права администратора при подключении: запущенному пакетному движку нужны права root для PF и BPF.
+- Ethernet-совместимый сетевой интерфейс с поддержкой отправки кадров через BPF. Подходят многие интерфейсы Wi-Fi и Ethernet; фактическая поддержка проверяется при запуске.
 
-## Startup fix in 0.2.1
+**Обычные VPN-интерфейсы `utun`, PPP и другие туннели текущим транспортом не поддерживаются.** Если маршруты IPv4 и IPv6 по умолчанию используют разные интерфейсы, подключение завершится ошибкой. Если маршрут в интернет есть только для одного семейства адресов, перехватывается только оно.
 
-The first attempted live launch failed before entering the packet engine: system nohup returned `can't detach from console: No such process`. No packets were processed in that session. This version launches through native fork/setsid/exec with redirected streams, an exec acknowledgement and a PID file. It does not use nohup or require a console. A startup process that exits is reported immediately, and the alert includes the tail of packet.log.
+## Сборка и запуск
 
-The native launcher has been tested with stdin/stdout/stderr connected to /dev/null, without a terminal and without root. The privileged packet path still needs live validation.
+В репозитории находятся исходники. Сначала соберите приложение:
 
-## Run
-
-macOS 13+, Apple Silicon or Intel. Open `dist/Zapret macOS.app`. All executable components are universal and ad hoc signed; this is not a Developer ID signed or notarized release.
-
-1. Choose an original Flowseal config, starting with `general`.
-2. Set Game mode while disconnected if needed. Off preserves Flowseal's port-12 sentinel; on uses its default TCP/UDP range 1024–65535.
-3. Press Connect and authorize the packet engine with macOS. Unlike the old version, it requires root while running to use PF and BPF.
-4. Restart existing browser/Discord connections. Kernel PF states created before connection may bypass the new rules. The app never flushes unrelated system states.
-5. Inspect packet counters in Settings, then verify the actual applications on the affected network. Disconnect removes the session's interception rules and releases its PF enable reference.
-
-Closing the window leaves the menu-bar app running. Quit stops interception. A supervisor watches the GUI's process identity and also stops on GUI exit/crash. No LaunchDaemon, kext, NetworkExtension, DNS change, hosts update, SOCKS proxy, or permanent firewall configuration is installed.
-
-**Find a strategy** performs direct HTTP probes, then applies the original packet profiles in turn. It changes PF temporarily and requests administrator authorization. Testing all 22 profiles can take several minutes. HTTP success does not verify video playback, UDP voice, or filtering bypass. Packet activity is aggregate and can include other applications.
-
-## Packet path
-
-```text
-Application's real socket
-        ↓
-PF: log matching outbound TCP/UDP to a private pflog interface, block original
-        ↓
-New macOS adapter reads complete PFLOG IP packets
-        ↓
-Original zapret matcher, conntrack, TLS/QUIC parser and desync engine
-        ↓
-BPF writes Ethernet frames to the original physical uplink
-        ↓
-Gateway → server; replies arrive normally in the application's original socket
+```sh
+git clone https://github.com/UGamerZ/zapret-discord-youtube-macos.git
+cd zapret-discord-youtube-macos
+./scripts/build.sh
+open 'dist/Zapret macOS.app'
 ```
 
-Addresses and ports are preserved. No userspace TCP stack, NAT or external relay is introduced. IPv4 header checksums that raw-socket output would normally fill are completed by the adapter. Deliberately wrong TCP/UDP checksums used for fooling are preserved. Pre-TSO TCP superpackets are segmented in software to the physical MTU before Ethernet injection, preserving the TCP byte stream and deliberate checksum corruption. Incoming SYN/ACKs are observed for conntrack feedback; incoming traffic is not blocked or rewritten.
+Скрипт собирает приложение и пакетный движок для **arm64 и x86_64**, создаёт универсальный `.app` и подписывает его локальной подписью ad hoc. Подписи Developer ID и нотариального заверения Apple у этой сборки нет.
 
-PFLOG is a bounded capture buffer, **not** a kernel packet queue with backpressure. Capture drops and injection failures stop interception, allowing later packets to use the ordinary kernel path. A lost UDP datagram cannot be recovered by removing the rules; applications may need reconnecting.
+Для редактирования интерфейса откройте `Package.swift`. Чтобы получить полноценный `.app` с движком и ресурсами, используйте скрипт сборки: одной команды `swift run` недостаточно.
 
-## Configuration parity
+## Использование
 
-`Resources/flowseal/configs` contains the pinned original BAT files. `scripts/import_flowseal.py` parses only their winws argument region; it never executes batch commands. It preserves argument order, repeated fake payload options, filters, include/exclude lists, `--new` profile chains, numeric settings and fake binary contents. It translates only:
+Названия кнопок ниже соответствуют английским надписям в интерфейсе.
 
-- `%BIN%` and `%LISTS%` into bundled resource paths;
-- `%GameFilterTCP%` / `%GameFilterUDP%` into the original disabled sentinel or enabled default range;
-- CMD's escaped `^!` into the literal `!` expected by zapret;
-- `--wf-tcp` / `--wf-udp` into equivalent macOS capture-port windows.
+1. Выберите конфигурацию Flowseal. Начните с `general`.
+2. При необходимости включите **Game mode**, пока приложение отключено. В выключенном состоянии сохраняется исходное сигнальное значение Flowseal — порт 12; во включённом используется стандартный диапазон TCP/UDP 1024–65535.
+3. Нажмите **Connect** и подтвердите запуск пакетного движка средствами macOS.
+4. Перезапустите существующие соединения браузера и Discord. Состояния PF, созданные до подключения, могут обходить новые правила. Приложение не очищает посторонние состояния системного firewall.
+5. Посмотрите счётчики пакетов в **Settings** и проверьте работу нужных приложений в сети с блокировками.
+6. Для остановки нажмите **Disconnect**. Приложение удалит правила перехвата текущего сеанса и освободит свою ссылку на включение PF.
 
-Every remaining option goes to the original zapret command-line parser and implementation. Unknown flags fail; there is no SOCKS fallback or silent method downgrade. The IPSet selector mirrors disabled (the upstream sentinel), loaded (the supplied original backup ranges), and any (an empty unrestricted list). User-list placeholders are supplied as empty files; the other lists and fake payloads are pinned snapshots, not live updates. UI editing of lists and custom game ranges is not implemented.
+Закрытие окна оставляет приложение работающим в строке меню. **Quit** завершает приложение и останавливает перехват. Отдельный процесс наблюдает за процессом интерфейса и также инициирует остановку при его завершении или сбое.
 
-Examples verified in byte-level replay:
+Приложение не устанавливает LaunchDaemon, расширение ядра или NetworkExtension, не меняет DNS и `hosts`, не включает SOCKS-прокси и не записывает постоянную конфигурацию firewall.
 
-- `general`: `multisplit`, `seqovl=681`, exact fake TLS prefix, zero IPv4 ID, valid checksums and original TLS stream reconstruction.
-- `FAKE TLS AUTO`: both configured fake-TLS entries, each repeated 11 times, bad sequence/ack offsets, SNI mutation and reverse segment order. Collapsing those repeated fake options would change the behavior.
-- `ALT`: 32 emitted packets for the tested TLS flow, timestamp fooling and exact fake split patterns.
-- Discord UDP: six exact ACTIVE_DISCORD_UDP fake datagrams before the real 74-byte IP-discovery request, with original addresses and ports, for IPv4 and IPv6.
+### Автоматический подбор стратегии
 
-See `VALIDATION.md` for the limits of the checks and `PACKET_RESEARCH.md` for sources.
+**Find a strategy** сначала выполняет прямые HTTP-проверки, затем по очереди применяет оригинальные пакетные профили. На время проверки изменяются правила PF; потребуется подтверждение администратора. Перебор всех 22 конфигураций может занять несколько минут.
 
-## Runtime requirements and boundaries
+Успешный HTTP-запрос не подтверждает воспроизведение видео, работу голоса по UDP или обход DPI. Счётчики отражают суммарную активность перехвата и могут включать трафик других приложений.
 
-The adapter needs an Ethernet-compatible physical uplink that supports BPF Ethernet injection. Typical Wi-Fi/Ethernet interfaces expose this, but support is checked at runtime. VPN/PPP/tunnel interfaces are refused. If IPv4 and IPv6 have different default uplinks, startup fails instead of silently covering only one. If only one IP family has an internet default route, only that family is intercepted.
+## Если подключение завершается ошибкой
 
-The active PF ruleset must already reference Apple's `com.apple/*` wildcard anchor. The engine loads only its own child anchor and never rewrites `/etc/pf.conf`, flushes global states, or disables PF globally. Other firewall rules, socket owners that PF cannot identify, root-owned traffic, unusual offload/MTU behavior and OS changes can affect coverage. Local/private/multicast addresses and the physical interface's local networks are excluded from interception. Flowseal's more specific lists and L7/IP filtering remain in the original engine.
+В версии 0.2.2 сообщение об ошибке содержит этап запуска, краткую причину, подробности от ОС/libpcap/системной команды и код ошибки. Кнопки **Copy error** и **Open log** позволяют скопировать сообщение и открыть журнал. Обычные сообщения загрузки списков больше не подменяют причину сбоя.
 
-The supplied configs are outbound strategies. Arbitrary new configs needing inbound suppression/rewriting are not supported by this backend. This is not a claim of universal winws compatibility. DNS resolution is unchanged, so DNS poisoning can still prevent connections.
+Файлы текущего сеанса находятся в:
 
-The interface and default gateway are checked while running. A route/uplink change, missing own PF rules, packet-worker failure, capture overflow or injection failure stops the session. Reconnect after changing networks. System sleep/wake and kernel PF behavior need live testing on each supported macOS release.
+```text
+/var/run/zapret-macos-UID/
+```
 
-## Session and recovery
+Здесь `UID` — числовой идентификатор пользователя. Его можно узнать командой `id -u`. Например, для UID 501 журнал расположен по пути `/var/run/zapret-macos-501/packet.log`.
 
-Root-owned runtime state is in `/var/run/zapret-macos-UID/`: `packet.log`, `status.json`, `rules.conf`, lock, control socket and the session's PF reference token. The stop socket accepts only a fixed stop request from the initiating UID or root; it is not an arbitrary privileged command interface.
+Основные файлы:
 
-The root supervisor clears the own anchor before stopping the worker. The worker also attempts cleanup if its supervisor disappears. A new Connect first recovers a stale own anchor and PF reference, refusing to interfere with a running session. If cleanup needs retry, the GUI shows a recovery action. Killing both root processes simultaneously can still leave stale rules until recovery or reboot; no background launch service is installed to recover after every possible failure.
+- `packet.log` — журнал движка и запуска;
+- `status.json` — состояние, этап и подробности ошибки, интерфейс и счётчики;
+- `rules.conf` — правила PF текущего сеанса.
 
-If the GUI cannot perform recovery, the bundled helper supports:
+После смены сети или маршрутов подключитесь заново. Если интерфейс не поддерживает Ethernet-отправку, используется VPN-туннель либо IPv4 и IPv6 идут через разные интерфейсы, сначала устраните соответствующую причину.
+
+### Восстановление после сбоя
+
+Перед новым подключением приложение пытается убрать оставшиеся правила своего предыдущего сеанса и освободить сохранённую ссылку PF. В работу активного сеанса оно не вмешивается. Если очистку нужно повторить, интерфейс предложит восстановление.
+
+Если восстановление через интерфейс недоступно, используйте вспомогательную программу из собранного приложения. Замените путь на фактический путь к своему `.app`, а `YOUR_NUMERIC_UID` — на результат `id -u`:
 
 ```sh
 sudo '/path/to/Zapret macOS.app/Contents/Resources/zapret-packet' --mac-recover YOUR_NUMERIC_UID
 ```
 
-Use `id -u` for your numeric UID. Recovery clears only `com.apple/zapretmac-UID` and its saved PF reference. A crashed session may leave an unused private pflog interface; recovery does not destroy a possibly reused stale interface. Runtime files disappear on reboot. The earlier 0.1 SOCKS journal is detected separately and must be restored before packet-mode connection.
+Восстановление очищает только собственный anchor `com.apple/zapretmac-UID` и сохранённую ссылку на включение PF. После аварии может остаться неиспользуемый интерфейс pflog: восстановление не удаляет его, поскольку он мог быть повторно использован другим процессом. Файлы состояния исчезают после перезагрузки.
 
-## Build and test
+Управляющий сокет принимает только фиксированную команду остановки от пользователя, запустившего сеанс, или root. Произвольные привилегированные команды через него не выполняются.
 
-Requires Apple Command Line Tools, Swift 5.9+, clang and Python 3 (provided by the current Command Line Tools installation). System libpcap and zlib are used; no dependency downloads are needed.
+Привилегированный процесс наблюдения очищает собственный anchor перед остановкой рабочего процесса. Рабочий процесс тоже пытается выполнить очистку, если процесс наблюдения исчезает. Одновременное принудительное завершение обоих процессов всё же может оставить правила до восстановления или перезагрузки: постоянная фоновая служба восстановления не устанавливается.
+
+Если ранее использовалась версия 0.1 с SOCKS, её журнал изменений обнаруживается отдельно. Прежние настройки нужно восстановить до подключения в пакетном режиме.
+
+## Соответствие конфигурациям Flowseal
+
+В `Resources/flowseal/configs` находятся зафиксированные оригинальные BAT-файлы. Скрипт `scripts/import_flowseal.py` читает только область аргументов winws и **не выполняет команды Windows**.
+
+Импорт сохраняет порядок аргументов, повторяющиеся параметры поддельных пакетов, фильтры, списки включения и исключения, цепочки профилей `--new`, числовые настройки и содержимое бинарных шаблонов. Преобразуются только:
+
+- `%BIN%` и `%LISTS%` — в пути к ресурсам приложения;
+- `%GameFilterTCP%` / `%GameFilterUDP%` — в исходное сигнальное значение выключенного режима либо стандартный диапазон включённого;
+- экранированное CMD-значение `^!` — в символ `!`, ожидаемый zapret;
+- `--wf-tcp` / `--wf-udp` — в соответствующие диапазоны портов перехвата на macOS.
+
+Остальные параметры передаются оригинальному парсеру и реализации zapret. Неизвестные параметры приводят к ошибке; скрытой замены метода или перехода на SOCKS нет.
+
+Переключатель **IPSet** воспроизводит три состояния: `disabled` — исходное сигнальное значение; `loaded` — поставляемый полный резервный список диапазонов; `any` — пустой список без ограничений по IPSet. Пользовательские списки поставляются пустыми. Остальные списки и бинарные шаблоны зафиксированы на конкретных версиях исходных проектов и автоматически не обновляются. Редактирование списков и произвольных игровых диапазонов через интерфейс пока не реализовано.
+
+В автономных тестах с проверкой байтов подтверждены, в частности:
+
+- `general`: `multisplit`, `seqovl=681`, точный поддельный TLS-префикс, нулевой IPv4 ID, корректные контрольные суммы и восстановление исходного TLS-потока;
+- `FAKE TLS AUTO`: обе настроенные записи fake-TLS с 11 повторами каждой, заданные смещения sequence/ack, изменение SNI и обратный порядок сегментов. Объединение повторяющихся параметров изменило бы поведение;
+- `ALT`: 32 исходящих пакета для тестового TLS-соединения, обман с помощью timestamps и точные шаблоны fake split;
+- Discord UDP: шесть точных поддельных датаграмм `ACTIVE_DISCORD_UDP` перед настоящим 74-байтовым запросом определения IP, с сохранением адресов и портов для IPv4 и IPv6.
+
+Подробности и границы проверки описаны в [VALIDATION.md](VALIDATION.md), технические источники — в [PACKET_RESEARCH.md](PACKET_RESEARCH.md). Эти документы пока на английском.
+
+## Как обрабатываются пакеты
+
+```text
+Реальный сокет приложения
+        ↓
+PF записывает подходящие исходящие TCP/UDP-пакеты
+в отдельный интерфейс pflog и блокирует оригиналы
+        ↓
+Транспорт macOS читает полные IP-пакеты из PFLOG
+        ↓
+Оригинальный движок zapret: фильтры, conntrack,
+разбор TLS/QUIC и методы десинхронизации
+        ↓
+BPF отправляет Ethernet-кадры через исходный сетевой интерфейс
+        ↓
+Шлюз → сервер; ответы приходят в исходный сокет приложения
+```
+
+Адреса и порты сохраняются. Дополнительный TCP-стек в пользовательском пространстве, NAT или внешний ретранслятор не используются.
+
+Транспорт заполняет контрольную сумму заголовка IPv4, которую при обычной отправке через raw socket заполнила бы ОС. Намеренно неверные контрольные суммы TCP/UDP, используемые для обмана DPI, сохраняются. Крупные TCP-пакеты до обработки TSO программно разбиваются по MTU интерфейса перед отправкой Ethernet-кадров; сохраняются TCP-поток и намеренные искажения контрольных сумм.
+
+Входящие SYN/ACK наблюдаются для обратной связи conntrack. Входящий трафик не блокируется и не переписывается.
+
+PFLOG имеет ограниченный буфер захвата и не обеспечивает обратное давление, как очередь пакетов в ядре. Потери при захвате и ошибки отправки останавливают перехват, после чего последующие пакеты могут идти обычным путём через ядро. Удаление правил не восстанавливает уже потерянную UDP-датаграмму; приложению может потребоваться переподключение.
+
+## Ограничения транспорта
+
+В активных правилах PF уже должна присутствовать ссылка на wildcard anchor Apple `com.apple/*`. Движок загружает только свой дочерний anchor, не переписывает `/etc/pf.conf`, не очищает глобальные состояния и не отключает PF целиком.
+
+На охват трафика могут влиять другие правила firewall, соединения, владельца сокета которых PF не определяет, трафик процессов root, особенности offload/MTU и изменения macOS. Локальные, частные и multicast-адреса, а также локальные сети интерфейса исключены из перехвата. Более точные фильтры Flowseal по спискам, IP и прикладным протоколам выполняются оригинальным движком.
+
+Поставляемые конфигурации рассчитаны на обработку исходящего трафика. Произвольные новые конфигурации, которым нужны блокировка или переписывание входящих пакетов, этим транспортом не поддерживаются. Полная совместимость со всеми возможностями winws не заявляется. DNS остаётся без изменений: подмена DNS-ответов по-прежнему может мешать подключению.
+
+Во время работы проверяются интерфейс и шлюз по умолчанию. Смена маршрута или интерфейса, исчезновение собственных правил PF, сбой рабочего процесса, переполнение захвата или ошибка отправки останавливают сеанс. Сон и пробуждение системы, а также поведение PF требуют испытаний на каждой поддерживаемой версии macOS.
+
+## Тесты
+
+Из корня репозитория:
 
 ```sh
-./scripts/build.sh
 ./scripts/test.sh
 ```
 
-The build imports the original configs, builds the original engine plus macOS backend for arm64 and x86_64, builds a universal SwiftUI executable, assembles the bundle and ad hoc signs it. Tests do not request root, edit PF, create live packet captures or send network packets. They exercise the actual engine offline with PCAP input/output, not an independently implemented approximation of the algorithms.
+Тесты не запрашивают root, не меняют PF, не захватывают живой трафик и не отправляют сетевые пакеты. Проверяется настоящий движок с входом и выходом в формате PCAP, а не отдельная имитация его алгоритмов.
 
-Open Package.swift to edit the GUI; use the script to assemble its packet engine and resources. `swift run` alone does not produce a complete application bundle.
+## Исправления последних версий
 
-Independent, unofficial project. See THIRD_PARTY.md and bundled licenses.
+### 0.2.2 — захват входящих пакетов и сообщения об ошибках
+
+Прежний фильтр использовал BPF-квалификатор `inbound`, который системная libpcap отклоняет для Ethernet с ошибкой `inbound/outbound not supported on Ethernet`. Причина сбоя не сохранялась. Теперь направление выбирается через `pcap_setdirection(PCAP_D_IN)`, а фильтр SYN/ACK для IPv4/IPv6 использует переносимые поля пакетов.
+
+Каждый этап настройки транспорта сохраняет структурированную ошибку в `status.json` и `packet.log`. Автономные регрессионные тесты воспроизводят прежний сбой компиляции фильтра, проверяют новый фильтр и сопоставление IPv4/IPv6, сериализацию ошибок и краткий текст уведомления. Выбор направления захвата ещё нужно проверить при реальном запуске с правами администратора.
+
+### 0.2.1 — запуск без консоли
+
+Первая попытка запуска в реальной системе завершилась до входа в пакетный движок: системный `nohup` вернул `can't detach from console: No such process`. В том сеансе пакеты не обрабатывались.
+
+Новый запуск использует `fork`/`setsid`/`exec`, перенаправление потоков, подтверждение выполнения `exec` и PID-файл. Консоль и `nohup` больше не нужны. Раннее завершение процесса обнаруживается сразу.
+
+Запуск проверен без терминала и root, со стандартными потоками, направленными в `/dev/null`. Привилегированный сетевой путь требует отдельной проверки.
+
+## Исходные проекты и лицензии
+
+- [bol-van/zapret](https://github.com/bol-van/zapret) — оригинальный пакетный движок.
+- [Flowseal/zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) — конфигурации, списки и бинарные шаблоны.
+- [trankesh/zapret-youtube-discord-gui](https://github.com/trankesh/zapret-youtube-discord-gui) — образец интерфейса, значок и шрифт.
+
+Проект независимый и неофициальный. Код проекта распространяется по [MIT](LICENSE); лицензии и уведомления сторонних компонентов сохранены в `ThirdParty`. Точные версии источников и сведения об адаптации приведены в [THIRD_PARTY.md](THIRD_PARTY.md).
