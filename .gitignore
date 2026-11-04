@@ -1,0 +1,5 @@
+.build/
+.swiftpm/
+dist/
+ThirdParty/nfq/dvtws
+.DS_Store
