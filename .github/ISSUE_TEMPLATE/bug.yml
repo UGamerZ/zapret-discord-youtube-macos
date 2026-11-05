@@ -1,0 +1,48 @@
+name: Ошибка / Bug report
+description: Ошибка запуска, интерфейса или пакетного транспорта / App or transport failure
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "Прикладывайте конкретную ошибку через Copy error. Удалите из журналов личные пути, идентификаторы и секреты. / Redact personal data and secrets from logs."
+  - type: input
+    id: version
+    attributes:
+      label: Версия приложения / App version
+      placeholder: "0.2.2"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: Версия macOS / macOS version
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Процессор / Processor
+      options:
+        - Apple Silicon
+        - Intel
+    validations:
+      required: true
+  - type: input
+    id: network
+    attributes:
+      label: Интерфейс и профиль / Interface and profile
+      placeholder: "Wi-Fi, general, Game mode off, IPSet disabled; VPN off"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Шаги, ожидаемый и фактический результат / Steps, expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Ошибка и журнал / Error and relevant log
+      description: "Copy error, stage/detail из status.json или относящийся к сбою фрагмент packet.log. / Relevant excerpt only."
+      render: text

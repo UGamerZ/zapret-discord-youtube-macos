@@ -1,12 +1,34 @@
-# Zapret macOS 0.2.2
+# Zapret macOS
 
-Неофициальная версия zapret для macOS с интерфейсом на SwiftUI, оформленным по образцу [trankesh/zapret-youtube-discord-gui](https://github.com/trankesh/zapret-youtube-discord-gui).
+**Графическое приложение zapret для macOS — оригинальные стратегии Flowseal, нативный интерфейс и готовая сборка для Mac.**
 
-Приложение использует **все 22 оригинальные конфигурации Flowseal и оригинальный пакетный движок bol-van на C**. Для macOS разработан транспорт на PFLOG/BPF: он перехватывает исходящие IP-пакеты и отправляет сформированные движком Ethernet-кадры через сетевой интерфейс.
+[![Release](https://img.shields.io/github/v/release/UGamerZ/zapret-discord-youtube-macos)](https://github.com/UGamerZ/zapret-discord-youtube-macos/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-13%2B-111111?logo=apple)](https://github.com/UGamerZ/zapret-discord-youtube-macos/releases/latest)
+[![Architecture](https://img.shields.io/badge/Apple_Silicon_%2B_Intel-universal-ffad53)](https://github.com/UGamerZ/zapret-discord-youtube-macos/releases/latest)
+[![MIT](https://img.shields.io/github/license/UGamerZ/zapret-discord-youtube-macos)](LICENSE)
+[![Build](https://github.com/UGamerZ/zapret-discord-youtube-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/UGamerZ/zapret-discord-youtube-macos/actions/workflows/ci.yml)
 
-Поддерживаются операции оригинального движка: поддельные TCP/UDP-пакеты, перекрытия последовательностей, неверные номера sequence/acknowledgement, TCP timestamps, повторы и изменение IPv4 IP ID. Прежняя адаптация через SOCKS заменена пакетным транспортом.
+**[Скачать для Mac](https://github.com/UGamerZ/zapret-discord-youtube-macos/releases/latest)** · [English](README.en.md) · [Сообщить об ошибке](https://github.com/UGamerZ/zapret-discord-youtube-macos/issues/new/choose) · [История изменений](CHANGELOG.md)
 
-> **Экспериментальная версия.** Сборка и автономные тесты обработки пакетов проходят. Работа привилегированного перехвата PF/BPF, восстановление после сбоев в реальной сети, голос Discord и обход блокировок провайдера пока не подтверждены полноценными сетевыми испытаниями. Успешная обработка тестового PCAP не доказывает работоспособность обхода.
+## Что умеет
+
+- **22 стратегии Flowseal** для работы с трафиком YouTube, Discord и других адресов из поставляемых списков.
+- **Оригинальный движок bol-van на C:** поддельные TCP/UDP-пакеты, разделение и перекрытие сегментов, sequence/ack, timestamps и повторы.
+- **Нативный интерфейс SwiftUI:** подключение одной кнопкой, выбор стратегии, Game mode и IPSet.
+- **Подбор стратегии:** последовательные HTTP-проверки с оригинальными профилями.
+- **Диагностика:** счётчики пакетов, журнал и сообщения с конкретным этапом и причиной ошибки.
+- **Универсальный `.app`:** Apple Silicon и Intel, без установки компилятора или Python.
+
+Проект переносит методы zapret на macOS с транспортом PFLOG/BPF. Он не использует внешний VPN-сервер и не меняет DNS или `hosts`. Интерфейс оформлен по образцу [trankesh](https://github.com/trankesh/zapret-youtube-discord-gui); конфигурации взяты у [Flowseal](https://github.com/Flowseal/zapret-discord-youtube), движок — у [bol-van](https://github.com/bol-van/zapret).
+
+<p align="center">
+  <img src="docs/images/connection.png" width="300" alt="Главный экран Zapret macOS: подключение, Game mode и выбор стратегии">
+  <img src="docs/images/strategies.png" width="300" alt="Выбор оригинальных стратегий Flowseal в Zapret macOS">
+</p>
+
+Скриншоты реального приложения в отключённом состоянии; они не показывают результат сетевой проверки.
+
+> **Статус проверки.** Версия 0.2.2 опубликована как обычный релиз. Сборка и автономные тесты обработки пакетов проходят; транспорт PFLOG/BPF остаётся экспериментальным. Полноценные испытания привилегированного перехвата, восстановления после сбоев, голоса Discord и обхода DPI в реальной сети ещё не завершены. Эффективность зависит от провайдера и стратегии. Подробности — в [VALIDATION.md](VALIDATION.md).
 
 ## Скачать и установить без сборки
 
@@ -24,7 +46,7 @@
 shasum -a 256 -c SHA256SUMS.txt
 ```
 
-Релиз помечен как предварительный: ограничения экспериментального транспорта остаются в силе.
+Текущая версия публикуется как обычный релиз. Статус сетевых испытаний и ограничения транспорта описаны выше.
 
 ## Требования
 
@@ -194,6 +216,12 @@ PFLOG имеет ограниченный буфер захвата и не об
 Новый запуск использует `fork`/`setsid`/`exec`, перенаправление потоков, подтверждение выполнения `exec` и PID-файл. Консоль и `nohup` больше не нужны. Раннее завершение процесса обнаруживается сразу.
 
 Запуск проверен без терминала и root, со стандартными потоками, направленными в `/dev/null`. Привилегированный сетевой путь требует отдельной проверки.
+
+## Обратная связь и участие
+
+Нашли ошибку или проверили приложение на своём провайдере? Создайте [отчёт](https://github.com/UGamerZ/zapret-discord-youtube-macos/issues/new/choose): укажите macOS, процессор, версию приложения, стратегию и результат без zapret / с zapret. Для отчёта о сети достаточно названия провайдера и страны; точный адрес и полный IP не нужны.
+
+[Как участвовать](CONTRIBUTING.md) · [Сообщить об уязвимости](SECURITY.md) · [Материалы для публикации](docs/PROMOTION.md)
 
 ## Исходные проекты и лицензии
 

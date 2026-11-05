@@ -1,0 +1,32 @@
+name: Проверка провайдера / Network test
+description: Сравнение работы без zapret и с выбранной стратегией / ISP validation report
+title: "[Network] "
+body:
+  - type: markdown
+    attributes:
+      value: "Проверяйте одну сеть до и после подключения. Укажите только страну и провайдера, без точного адреса или полного IP. / Compare the same network; no precise location or full IP needed."
+  - type: input
+    id: environment
+    attributes:
+      label: macOS, процессор и версия приложения / macOS, processor and app version
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Страна, провайдер и тип подключения / Country, ISP and connection type
+    validations:
+      required: true
+  - type: input
+    id: profile
+    attributes:
+      label: Стратегия, Game mode, IPSet, наличие VPN / Profile, settings and VPN status
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Результат без zapret и с zapret / Results without and with zapret
+      description: "Отдельно сайт YouTube, воспроизведение видео, Discord и голос. Укажите также ошибки и счётчики. / Separate website, playback, Discord and voice results."
+    validations:
+      required: true

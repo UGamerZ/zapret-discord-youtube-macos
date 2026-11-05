@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Руководство / Documentation
+    url: https://github.com/UGamerZ/zapret-discord-youtube-macos#readme
+    about: Установка, диагностика и восстановление / Installation, diagnostics and recovery
+  - name: Уязвимость / Security vulnerability
+    url: https://github.com/UGamerZ/zapret-discord-youtube-macos/security/advisories/new
+    about: Приватный отчёт / Private security report
